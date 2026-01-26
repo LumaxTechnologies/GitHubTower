@@ -1,0 +1,18 @@
+# Example columns.yaml
+columns:
+  - name: Backlog
+    position: 1
+    github_id: null  # Will be set after syncing
+  - name: To Do
+    position: 2
+    github_id: null
+  - name: In Progress
+    position: 3
+    github_id: null
+  - name: Review
+    position: 4
+    github_id: null
+  - name: Done
+    position: 5
+    github_id: null
+

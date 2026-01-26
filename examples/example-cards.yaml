@@ -1,0 +1,18 @@
+# Example cards.yaml
+cards:
+  - note: "Set up CI/CD pipeline"
+    column: "To Do"
+    position: "top"
+  - note: "Update documentation"
+    column: "To Do"
+    position: "top"
+  - note: "Review pull requests"
+    column: "In Progress"
+    position: "top"
+  - note: "Deploy to staging"
+    column: "Review"
+    position: "top"
+  - note: "Completed task example"
+    column: "Done"
+    position: "top"
+

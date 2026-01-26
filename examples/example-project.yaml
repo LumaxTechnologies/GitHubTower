@@ -1,0 +1,6 @@
+# Example project.yaml
+name: Sprint 2024 Q1
+body: Project for managing Q1 2024 sprint tasks
+owner: myorg  # Optional, uses default from config if not set
+github_id: null  # Will be set after syncing to GitHub
+
