@@ -43,7 +43,18 @@ class ProjectSyncer:
             return False
 
         yaml_handler = ProjectYAML(project_dir)
-        project_data = yaml_handler.load_project()
+        
+        # Try to load unified structure first
+        unified_data = yaml_handler.load_unified_project()
+        if unified_data and unified_data.get("project"):
+            project_data = yaml_handler.get_project_from_unified(unified_data)
+            columns_data = yaml_handler.get_columns_from_unified(unified_data)
+            cards_data = yaml_handler.get_cards_from_unified(unified_data)
+        else:
+            # Fall back to separate files for backward compatibility
+            project_data = yaml_handler.load_project()
+            columns_data = yaml_handler.load_columns()
+            cards_data = yaml_handler.load_cards()
 
         if not project_data:
             # Project YAML doesn't exist, try to fetch from GitHub and create it
@@ -195,17 +206,13 @@ class ProjectSyncer:
                 except ImportError:
                     pass
 
-        # Sync columns
-        columns_data = yaml_handler.load_columns()
+        # Sync columns (use columns_data loaded above)
         if columns_data:
             self._sync_columns(project, columns_data, require_confirmation)
 
-        # Sync cards
-        cards_data = yaml_handler.load_cards()
+        # Sync cards (use cards_data loaded above)
         if cards_data:
             self._sync_cards(project, cards_data, require_confirmation)
-            # Create/update card-column mapping file from local cards
-            yaml_handler.save_card_column_map(cards_data)
 
         console.print(f"[green]Successfully synced project: {project_name}[/green]")
         return True
@@ -270,7 +277,7 @@ class ProjectSyncer:
         if project_v2_data:
             project_node_id = project_v2_data.get("id")
             
-            # Save project metadata
+            # Prepare project metadata
             project_data = {
                 "name": project_v2_data.get("title", project_name),
                 "body": project_v2_data.get("shortDescription", ""),
@@ -278,7 +285,6 @@ class ProjectSyncer:
                 "github_node_id": project_node_id,  # Store GraphQL node ID
                 "project_v2": True,  # Mark as V2 project
             }
-            yaml_handler.save_project(project_data)
             
             # Fetch items (fields will be extracted from items)
             try:
@@ -312,9 +318,8 @@ class ProjectSyncer:
                                     "field_id": status_field_id,
                                 })
                 
-                # Sort columns by position and save
+                # Sort columns by position
                 columns_data.sort(key=lambda x: x["position"])
-                yaml_handler.save_columns(columns_data)
                 
                 # Map items to cards
                 cards_data = []
@@ -363,11 +368,11 @@ class ProjectSyncer:
                         "item_type": item.get("type"),
                     })
                 
-                # Re-save columns in case we added new ones
+                # Re-sort columns in case we added new ones
                 columns_data.sort(key=lambda x: x["position"])
-                yaml_handler.save_columns(columns_data)
-                yaml_handler.save_cards(cards_data)
-                yaml_handler.save_card_column_map(cards_data)
+                
+                # Save unified YAML file
+                yaml_handler.save_unified_project(project_data, columns_data, cards_data)
                 
                 console.print(f"[green]Successfully synced Projects V2 from GitHub: {project_name}[/green]")
                 console.print(f"[dim]Project URL: {project_v2_data.get('url')}[/dim]")
@@ -375,21 +380,22 @@ class ProjectSyncer:
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not sync fields and items: {e}[/yellow]")
                 console.print(f"[yellow]Project metadata synced, but columns and cards sync failed.[/yellow]")
+                # Save project metadata only
+                yaml_handler.save_unified_project(project_data, [], [])
                 console.print(f"[green]Successfully synced Projects V2 from GitHub: {project_name}[/green]")
                 console.print(f"[dim]Project URL: {project_v2_data.get('url')}[/dim]")
             
             return True
 
         # Handle Projects classic (REST API)
-        # Save project metadata
+        # Prepare project metadata
         project_data = {
             "name": project.name,
             "body": project.body,
             "github_id": project.id,
         }
-        yaml_handler.save_project(project_data)
 
-        # Get and save columns
+        # Get columns
         columns = self.github.get_project_columns(project)
         columns_data = []
         for idx, column in enumerate(columns, start=1):
@@ -398,9 +404,8 @@ class ProjectSyncer:
                 "position": idx,
                 "github_id": column.id,
             })
-        yaml_handler.save_columns(columns_data)
 
-        # Get and save cards
+        # Get cards
         cards_data = []
         for column in columns:
             cards = self.github.get_column_cards(column)
@@ -414,8 +419,8 @@ class ProjectSyncer:
                     card_data["content_url"] = card.content_url
                 cards_data.append(card_data)
 
-        yaml_handler.save_cards(cards_data)
-        yaml_handler.save_card_column_map(cards_data)
+        # Save unified YAML file
+        yaml_handler.save_unified_project(project_data, columns_data, cards_data)
 
         console.print(f"[green]Successfully synced from GitHub: {project_name}[/green]")
         return True
