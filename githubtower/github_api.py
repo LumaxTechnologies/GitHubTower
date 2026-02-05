@@ -776,6 +776,183 @@ class GitHubProjectManager:
             print(f"Error moving card: {e}")
             return False
 
+    def get_project_v2_fields(self, project_node_id: str) -> List[Dict[str, Any]]:
+        """Get all fields for a Projects V2 project.
+        
+        Note: Due to GraphQL union type limitations with ProjectV2FieldConfiguration,
+        we extract field information from items instead of querying fields directly.
+
+        Args:
+            project_node_id: GraphQL node ID of the project
+
+        Returns:
+            List of field data dictionaries (extracted from items)
+        """
+        # Instead of querying fields directly (which has union type issues),
+        # we'll extract field information from the items we query
+        # This method returns an empty list - field extraction happens in sync.py
+        # when processing items
+        return []
+
+    def get_project_v2_items(self, project_node_id: str) -> List[Dict[str, Any]]:
+        """Get all items for a Projects V2 project.
+
+        Args:
+            project_node_id: GraphQL node ID of the project
+
+        Returns:
+            List of item data dictionaries with their field values
+        """
+        token = self.config.github_token
+        if not token:
+            raise ValueError("GitHub token is required for GraphQL API")
+
+        query = """
+        query GetProjectItems($projectId: ID!, $first: Int!) {
+            node(id: $projectId) {
+                ... on ProjectV2 {
+                    items(first: $first) {
+                        nodes {
+                            id
+                            type
+                            content {
+                                ... on Issue {
+                                    title
+                                    body
+                                    number
+                                    url
+                                }
+                                ... on PullRequest {
+                                    title
+                                    body
+                                    number
+                                    url
+                                }
+                                ... on DraftIssue {
+                                    title
+                                    body
+                                }
+                            }
+                            fieldValues(first: 20) {
+                                nodes {
+                                    ... on ProjectV2ItemFieldTextValue {
+                                        text
+                                        field {
+                                            ... on ProjectV2FieldCommon {
+                                                name
+                                            }
+                                        }
+                                    }
+                                    ... on ProjectV2ItemFieldNumberValue {
+                                        number
+                                        field {
+                                            ... on ProjectV2FieldCommon {
+                                                name
+                                            }
+                                        }
+                                    }
+                                    ... on ProjectV2ItemFieldDateValue {
+                                        date
+                                        field {
+                                            ... on ProjectV2FieldCommon {
+                                                name
+                                            }
+                                        }
+                                    }
+                                    ... on ProjectV2ItemFieldSingleSelectValue {
+                                        name
+                                        field {
+                                            ... on ProjectV2FieldCommon {
+                                                name
+                                            }
+                                        }
+                                    }
+                                    ... on ProjectV2ItemFieldIterationValue {
+                                        title
+                                        field {
+                                            ... on ProjectV2FieldCommon {
+                                                name
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        pageInfo {
+                            hasNextPage
+                            endCursor
+                        }
+                    }
+                }
+            }
+        }
+        """
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/vnd.github+json",
+        }
+
+        all_items = []
+        has_next_page = True
+        cursor = None
+        first = 100
+
+        while has_next_page:
+            variables = {
+                "projectId": project_node_id,
+                "first": first,
+            }
+            if cursor:
+                query_with_pagination = query.replace(
+                    "items(first: $first)",
+                    "items(first: $first, after: $after)"
+                )
+                variables["after"] = cursor
+            else:
+                query_with_pagination = query
+
+            try:
+                response = requests.post(
+                    "https://api.github.com/graphql",
+                    json={"query": query_with_pagination, "variables": variables},
+                    headers=headers,
+                    timeout=30,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                if "errors" in data:
+                    error_messages = [err.get("message", "Unknown error") for err in data["errors"]]
+                    raise GithubException(
+                        400,
+                        f"GraphQL errors: {', '.join(error_messages)}",
+                        {},
+                    )
+
+                if "data" in data and "node" in data["data"] and data["data"]["node"]:
+                    node = data["data"]["node"]
+                    if "items" in node:
+                        items_data = node["items"]["nodes"]
+                        all_items.extend(items_data)
+                        
+                        page_info = node["items"].get("pageInfo", {})
+                        has_next_page = page_info.get("hasNextPage", False)
+                        cursor = page_info.get("endCursor")
+                    else:
+                        has_next_page = False
+                else:
+                    has_next_page = False
+            except requests.exceptions.RequestException as e:
+                raise GithubException(
+                    500,
+                    f"GraphQL request failed: {str(e)}",
+                    {},
+                )
+
+        return all_items
+
     def get_repository(self, owner: str, repo: str) -> Optional[Repository]:
         """Get a repository.
 

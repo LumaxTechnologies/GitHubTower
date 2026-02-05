@@ -18,6 +18,7 @@ class ProjectYAML:
         self.project_file = self.project_dir / "project.yaml"
         self.columns_file = self.project_dir / "columns.yaml"
         self.cards_file = self.project_dir / "cards.yaml"
+        self.card_column_map_file = self.project_dir / "card_column_map.yaml"
 
     def load_project(self) -> Optional[Dict[str, Any]]:
         """Load project definition from YAML.
@@ -121,6 +122,61 @@ class ProjectYAML:
             return True
         except Exception as e:
             print(f"Error saving cards YAML: {e}")
+            return False
+
+    def save_card_column_map(self, cards: List[Dict[str, Any]]) -> bool:
+        """Save card-to-column mapping to YAML.
+
+        Creates a mapping file organized by column, showing which cards belong to each column.
+
+        Args:
+            cards: List of card definitions (must have 'column' field)
+
+        Returns:
+            True if save was successful, False otherwise
+        """
+        try:
+            self.project_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Organize cards by column
+            column_map = {}
+            for card in cards:
+                column_name = card.get("column", "Unknown")
+                if column_name not in column_map:
+                    column_map[column_name] = []
+                
+                # Create a simplified card entry for the map
+                card_entry = {
+                    "note": card.get("note", ""),
+                    "position": card.get("position", "top"),
+                }
+                # Include item_id if present (for Projects V2)
+                if "item_id" in card:
+                    card_entry["item_id"] = card.get("item_id")
+                if "item_type" in card:
+                    card_entry["item_type"] = card.get("item_type")
+                if "github_id" in card:
+                    card_entry["github_id"] = card.get("github_id")
+                
+                column_map[column_name].append(card_entry)
+            
+            # Convert to list format for YAML (ordered by column name)
+            mapping_data = {
+                "card_column_mapping": [
+                    {
+                        "column": column_name,
+                        "cards": cards_list,
+                        "card_count": len(cards_list)
+                    }
+                    for column_name, cards_list in sorted(column_map.items())
+                ]
+            }
+            
+            with open(self.card_column_map_file, "w", encoding="utf-8") as f:
+                yaml.dump(mapping_data, f, default_flow_style=False, sort_keys=False)
+            return True
+        except Exception as e:
+            print(f"Error saving card-column mapping YAML: {e}")
             return False
 
     def create_template(self) -> bool:

@@ -16,12 +16,15 @@ if config_env_path.exists():
 class Config:
     """Configuration manager for GitHubTower."""
 
-    def __init__(self, config_dir: Optional[Path] = None):
+    def __init__(self, config_dir: Optional[Path] = None, projects_dir: Optional[Path] = None):
         """Initialize configuration.
 
         Args:
             config_dir: Optional custom configuration directory.
                        Defaults to ~/.githubtower
+            projects_dir: Optional custom projects directory.
+                         If provided, overrides the default projects directory.
+                         Defaults to config_dir / "projects"
         """
         if config_dir:
             self.config_dir = Path(config_dir)
@@ -30,7 +33,11 @@ class Config:
 
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.config_file = self.config_dir / "config.yaml"
-        self.projects_dir = self.config_dir / "projects"
+        
+        if projects_dir:
+            self.projects_dir = Path(projects_dir)
+        else:
+            self.projects_dir = self.config_dir / "projects"
 
         # Create projects directory if it doesn't exist
         self.projects_dir.mkdir(parents=True, exist_ok=True)

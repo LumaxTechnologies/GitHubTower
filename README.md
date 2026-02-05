@@ -143,8 +143,16 @@ githubtower list-github
 githubtower sync my-project
 
 # Sync from GitHub to local YAML
-githubtower sync my-project --from-github
+githubtower sync my-project --direction from-github
+
+# Sync to a custom folder (relative to current working directory)
+githubtower sync my-project --folder ./my-projects
+
+# Skip confirmation prompts (useful for automation)
+githubtower sync my-project --yes
 ```
+
+**Note**: By default, the CLI will prompt for confirmation before making any changes to GitHub (creating projects, columns, or cards). This helps prevent accidental modifications. Use the `--yes` or `-y` flag to skip these prompts for automated workflows.
 
 ### Show Project Details
 
@@ -164,7 +172,7 @@ githubtower delete my-project --github
 
 ## Project Structure
 
-Projects are stored in `~/.githubtower/projects/` by default. Each project has:
+Projects are stored in `~/.githubtower/projects/` by default. You can use the `--folder` option to store projects in a custom location (relative to your current working directory). Each project has:
 
 ```
 ~/.githubtower/projects/my-project/
@@ -222,14 +230,17 @@ githubtower create sprint-2024-q1 --template
 #    - Define columns in columns.yaml
 #    - Add cards in cards.yaml
 
-# 3. Sync to GitHub
+# 3. Sync to GitHub (will prompt for confirmation before modifying GitHub)
 githubtower sync sprint-2024-q1
 
 # 4. View project
 githubtower show sprint-2024-q1
 
 # 5. Make changes on GitHub, then sync back
-githubtower sync sprint-2024-q1 --from-github
+githubtower sync sprint-2024-q1 --direction from-github
+
+# 6. Sync to a custom folder location
+githubtower sync sprint-2024-q1 --folder ./projects
 ```
 
 ## Development

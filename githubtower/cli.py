@@ -46,10 +46,26 @@ def cli(ctx, config_dir):
     type=click.Choice(list_templates(), case_sensitive=False),
     help="Use a specific template by name (kanban, scrum, bug-tracking, etc.)",
 )
+@click.option(
+    "--folder",
+    type=click.Path(path_type=Path),
+    help="Folder path (relative to current working directory) to store the project. Creates folder if not exists. Defaults to ~/.githubtower/projects",
+)
 @click.pass_context
-def create(ctx, project_name, name, body, owner, template, template_name):
+def create(ctx, project_name, name, body, owner, template, template_name, folder):
     """Create a new project locally and optionally on GitHub."""
-    config = ctx.obj["config"]
+    base_config = ctx.obj["config"]
+    
+    # If --folder is provided, create a custom config with that folder as projects_dir
+    if folder:
+        folder_path = Path.cwd() / folder
+        folder_path = folder_path.resolve()
+        folder_path.mkdir(parents=True, exist_ok=True)
+        config = Config(config_dir=base_config.config_dir, projects_dir=folder_path)
+        console.print(f"[dim]Using custom folder: {folder_path}[/dim]")
+    else:
+        config = base_config
+    
     project_dir = config.ensure_project_dir(project_name)
 
     yaml_handler = ProjectYAML(project_dir)
@@ -125,6 +141,19 @@ def create(ctx, project_name, name, body, owner, template, template_name):
             # Determine target owner
             target_owner = project_data.get("owner") or config.github_org
             owner_info = target_owner or "your account"
+            
+            # Show warning about what will be created
+            console.print(f"\n[bold yellow]⚠ Warning: This will create a new project on GitHub[/bold yellow]")
+            console.print(f"  Project name: {project_data['name']}")
+            console.print(f"  Owner: {owner_info}")
+            if project_data.get("body"):
+                body_preview = project_data["body"][:100] + "..." if len(project_data.get("body", "")) > 100 else project_data.get("body", "")
+                console.print(f"  Description: {body_preview}")
+            
+            if not click.confirm("\n[bold]Do you want to proceed with creating this project on GitHub?[/bold]"):
+                console.print("[yellow]Cancelled. Project not created on GitHub.[/yellow]")
+                return
+            
             console.print(f"[cyan]Creating project '{project_data['name']}' on GitHub ({owner_info})...[/cyan]")
             
             # If organization is specified, verify it exists and is accessible
@@ -234,10 +263,25 @@ def create(ctx, project_name, name, body, owner, template, template_name):
 
 
 @cli.command()
+@click.option(
+    "--folder",
+    type=click.Path(path_type=Path),
+    help="Folder path (relative to current working directory) to list projects from. Defaults to ~/.githubtower/projects",
+)
 @click.pass_context
-def list_projects(ctx):
+def list_projects(ctx, folder):
     """List all local projects."""
-    config = ctx.obj["config"]
+    base_config = ctx.obj["config"]
+    
+    # If --folder is provided, create a custom config with that folder as projects_dir
+    if folder:
+        folder_path = Path.cwd() / folder
+        folder_path = folder_path.resolve()
+        config = Config(config_dir=base_config.config_dir, projects_dir=folder_path)
+        console.print(f"[dim]Listing projects from: {folder_path}[/dim]")
+    else:
+        config = base_config
+    
     projects_dir = config.projects_dir
 
     if not projects_dir.exists():
@@ -287,8 +331,19 @@ def list_projects(ctx):
     default="auto",
     help="Sync direction: to-github (local → GitHub), from-github (GitHub → local), or auto (detect automatically)",
 )
+@click.option(
+    "--folder",
+    type=click.Path(path_type=Path),
+    help="Folder path (relative to current working directory) to sync GitHub projects content. Creates folder if not exists. Defaults to ~/.githubtower/projects",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation prompts and proceed with all GitHub modifications",
+)
 @click.pass_context
-def sync(ctx, project_name, github_id, direction):
+def sync(ctx, project_name, github_id, direction, folder, yes):
     """Sync project between local YAML and GitHub.
     
     If direction is 'auto' (default), the command will:
@@ -296,7 +351,20 @@ def sync(ctx, project_name, github_id, direction):
     - Use 'to-github' if the project exists locally
     - Use 'from-github' if neither exists (will fail if project not found on GitHub)
     """
-    config = ctx.obj["config"]
+    base_config = ctx.obj["config"]
+    
+    # If --folder is provided, create a custom config with that folder as projects_dir
+    if folder:
+        # Resolve folder path relative to current working directory
+        folder_path = Path.cwd() / folder
+        folder_path = folder_path.resolve()
+        # Create folder if it doesn't exist
+        folder_path.mkdir(parents=True, exist_ok=True)
+        # Create a new config instance with custom projects_dir
+        config = Config(config_dir=base_config.config_dir, projects_dir=folder_path)
+        console.print(f"[dim]Using custom folder: {folder_path}[/dim]")
+    else:
+        config = base_config
 
     try:
         github_manager = GitHubProjectManager(config)
@@ -357,7 +425,7 @@ def sync(ctx, project_name, github_id, direction):
                 console.print(f"[cyan]Or sync from GitHub with: githubtower sync {project_name} --direction from-github[/cyan]")
                 sys.exit(1)
             
-            success = syncer.sync_to_github(project_name)
+            success = syncer.sync_to_github(project_name, require_confirmation=not yes)
             if not success:
                 sys.exit(1)
         else:
@@ -376,10 +444,25 @@ def sync(ctx, project_name, github_id, direction):
 
 @cli.command()
 @click.argument("project_name")
+@click.option(
+    "--folder",
+    type=click.Path(path_type=Path),
+    help="Folder path (relative to current working directory) to look for the project. Defaults to ~/.githubtower/projects",
+)
 @click.pass_context
-def show(ctx, project_name):
+def show(ctx, project_name, folder):
     """Show project details."""
-    config = ctx.obj["config"]
+    base_config = ctx.obj["config"]
+    
+    # If --folder is provided, create a custom config with that folder as projects_dir
+    if folder:
+        folder_path = Path.cwd() / folder
+        folder_path = folder_path.resolve()
+        config = Config(config_dir=base_config.config_dir, projects_dir=folder_path)
+        console.print(f"[dim]Looking for project in: {folder_path}[/dim]")
+    else:
+        config = base_config
+    
     project_dir = config.get_project_dir(project_name)
 
     if not project_dir.exists():
@@ -418,10 +501,25 @@ def show(ctx, project_name):
 @click.argument("project_name")
 @click.confirmation_option(prompt="Are you sure you want to delete this project?")
 @click.option("--github", is_flag=True, help="Also delete from GitHub")
+@click.option(
+    "--folder",
+    type=click.Path(path_type=Path),
+    help="Folder path (relative to current working directory) to delete the project from. Defaults to ~/.githubtower/projects",
+)
 @click.pass_context
-def delete(ctx, project_name, github):
+def delete(ctx, project_name, github, folder):
     """Delete a project locally and optionally on GitHub."""
-    config = ctx.obj["config"]
+    base_config = ctx.obj["config"]
+    
+    # If --folder is provided, create a custom config with that folder as projects_dir
+    if folder:
+        folder_path = Path.cwd() / folder
+        folder_path = folder_path.resolve()
+        config = Config(config_dir=base_config.config_dir, projects_dir=folder_path)
+        console.print(f"[dim]Looking for project in: {folder_path}[/dim]")
+    else:
+        config = base_config
+    
     project_dir = config.get_project_dir(project_name)
 
     if not project_dir.exists():
@@ -430,20 +528,25 @@ def delete(ctx, project_name, github):
 
     # Delete from GitHub if requested
     if github:
-        try:
-            github_manager = GitHubProjectManager(config)
-            yaml_handler = ProjectYAML(project_dir)
-            project_data = yaml_handler.load_project()
-
-            if project_data and project_data.get("github_id"):
+        console.print("\n[bold yellow]⚠ Warning: GitHub Projects deletion[/bold yellow]")
+        console.print("[yellow]GitHub Projects cannot be deleted via the REST API.[/yellow]")
+        console.print("[yellow]The --github flag is currently not supported for deletion.[/yellow]")
+        console.print("[yellow]Please delete the project manually on GitHub.com if needed.[/yellow]")
+        
+        yaml_handler = ProjectYAML(project_dir)
+        project_data = yaml_handler.load_project()
+        
+        if project_data and project_data.get("github_id"):
+            try:
+                github_manager = GitHubProjectManager(config)
                 project = github_manager.get_project(project_data["github_id"])
                 if project:
-                    # Note: GitHub API doesn't support deleting projects directly
-                    # This would require GraphQL API
-                    console.print("[yellow]GitHub Projects cannot be deleted via REST API.[/yellow]")
-                    console.print("[yellow]Please delete manually on GitHub.com[/yellow]")
-        except Exception as e:
-            console.print(f"[red]Error accessing GitHub: {e}[/red]")
+                    console.print(f"\n[yellow]Project on GitHub:[/yellow]")
+                    console.print(f"  Name: {project.name}")
+                    console.print(f"  ID: {project.id}")
+                    console.print(f"  URL: {project.url if hasattr(project, 'url') else 'N/A'}")
+            except Exception as e:
+                console.print(f"[dim]Could not fetch project details: {e}[/dim]")
 
     # Delete local files
     import shutil
@@ -452,9 +555,16 @@ def delete(ctx, project_name, github):
 
 
 @cli.command()
+@click.option(
+    "--folder",
+    type=click.Path(path_type=Path),
+    help="Folder path (relative to current working directory). Note: This option is ignored for list-github as it lists GitHub projects, not local ones.",
+)
 @click.pass_context
-def list_github(ctx):
+def list_github(ctx, folder):
     """List all projects on GitHub."""
+    if folder:
+        console.print("[dim]Note: --folder option is ignored for list-github (lists GitHub projects, not local ones)[/dim]")
     config = ctx.obj["config"]
 
     try:
